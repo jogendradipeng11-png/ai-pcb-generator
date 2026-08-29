@@ -1,120 +1,51 @@
 from flask import Flask, request, jsonify, send_from_directory
-import os
-import uuid
-import json
+import os, json, subprocess, base64
 from openai import OpenAI
 
-app = Flask(__name__, static_folder='static')
+app = Flask(__name__, static_folder='.')
 
-# GROQ API CLIENT
 client = OpenAI(
+    api_key=os.environ.get("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1",
-    api_key=os.environ.get("GROQ_API_KEY")
 )
 
-def gen_uuid():
-    return str(uuid.uuid4())
+def write_circuit_tsx(description):
+    # Ask Groq to generate tscircuit code
+    system = """You are a tscircuit expert. Return ONLY valid TSX code for index.circuit.tsx.
+    Use <board>, <connector standard="usb_c">, <chip>, <capacitor>, <resistor>, <led>.
+    For USB-C use: footprint="usb_c_receptacle_usb2_type_c" and pins A4,B9=VBUS, A1,B12=GND, A5=CC1, B5=CC2 with 5.1k pulldowns.
+    Export default function Circuit() { return <board>...</board> }"""
+
+    resp = client.chat.completions.create(
+        model="openai/gpt-oss-20b",
+        messages=[{"role":"system","content":system},{"role":"user","content":f"Design: {description}"}],
+        response_format={"type":"json_object"} # We'll parse TSX from JSON
+    )
+    tsx_code = json.loads(resp.choices[0].message.content)["tsx"]
+
+    with open("cb/project/index.circuit.tsx", "w") as f:
+        f.write(tsx_code)
 
 @app.route('/')
-def home():
-    return send_from_directory('.', 'index.html')
-
-@app.route('/static/<path:path>')
-def static_files(path):
-    return send_from_directory('static', path)
+def home(): return send_from_directory('.', 'index.html')
 
 @app.route('/generate', methods=['POST'])
 def generate():
-    data = request.json
-    prompt = data.get('prompt', '').strip()
+    prompt = request.json['prompt']
 
-    if not prompt:
-        return jsonify({"error": "Please enter a circuit description"}), 400
+    # 1. Generate TSX with Groq
+    write_circuit_tsx(prompt)
 
-    system_prompt = """
-    You are an expert KiCad PCB designer. Return ONLY valid JSON.
-    JSON format:
-    {
-      "components": [
-        {"ref": "R1", "value": "10k", "footprint": "Resistor_SMD:R_0805", "x": 30, "y": 40}
-      ],
-      "nets": [
-        {"name": "5V", "connections": ["U1.1", "C1.1"]}
-      ]
-    }
-    Rules:
-    1. Use standard KiCad v8 footprints: Resistor_SMD:R_0805, Capacitor_SMD:C_0805, Package_SO:SOIC-24, Connector:Conn_01x02, MCU_Module:ESP8266_NodeMCU, Regulator_Linear:LM2596, Amplifier_Current:INA219, Mux_Analog:CD74HC4067
-    2. Place components on 100x80mm grid. x: 20 to 180, y: 20 to 120. No overlap.
-    3. Connect power: VCC, GND, 3V3, 5V
-    4. For 8S BMS: 8 voltage sense lines to CD74HC4067, INA219 for current sense
-    """
+    # 2. Build with tscircuit CLI
+    subprocess.run(["npx", "tsci", "build", "--schematic-png", "--pcb-png"], cwd="cb/project", check=True)
 
-    try:
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile", # <-- NEW WORKING MODEL
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Design a circuit for: {prompt}"}
-            ],
-            temperature=0.1,
-            top_p=0.7,
-            max_tokens=1200,
-            response_format={"type": "json_object"}
-        )
-        design = json.loads(completion.choices[0].message.content)
-    except Exception as e:
-        return jsonify({"error": f"Groq API Error: {str(e)}. Check GROQ_API_KEY in Render"}), 500
+    # 3. Read PNGs and return base64
+    with open("cb/project/dist/index/schematic.png", "rb") as f: sch = base64.b64encode(f.read()).decode()
+    with open("cb/project/dist/index/pcb.png", "rb") as f: pcb = base64.b64encode(f.read()).decode()
 
-    # Step 2: Build REAL KiCad Schematic
-    sch_lines = [f'(kicad_sch (version 20240108) (generator ai-pcb-groq) (uuid "{gen_uuid()}")']
-    sch_lines.append(f' (title "AI PCB: {prompt}")')
-    sch_lines.append(' (lib_symbols (symbol "Device:R") (symbol "Device:C") (symbol "Package_SO:SOIC-24") (symbol "Connector:Conn_01x02") (symbol "Regulator_Linear:LM2596") (symbol "Amplifier_Current:INA219") (symbol "Mux_Analog:CD74HC4067"))')
+    # 4. Dummy BOM for now
+    bom_csv = "Ref,Value\nU1,AMS1117-3.3\nC1,10uF"
 
-    for c in design.get("components", []):
-        sch_lines.append(f' (symbol (lib_id "{c["footprint"]}") (at {c["x"]} {c["y"]} 0) (uuid "{gen_uuid()}")')
-        sch_lines.append(f' (property "Reference" "{c["ref"]}" (at {c["x"]} {c["y"]+10} 0) (effects (font (size 1.27 1.27))))')
-        sch_lines.append(f' (property "Value" "{c["value"]}" (at {c["x"]} {c["y"]-10} 0) (effects (font (size 1.27 1.27))))')
-        sch_lines.append(' )')
+    return jsonify({"schematic_png": sch, "pcb_png": pcb, "bom_csv": bom_csv})
 
-    net_code = 0
-    for n in design.get("nets", []):
-        net_code += 1
-        sch_lines.append(f' (net (code {net_code}) (name "{n["name"]}") )')
-        if len(n["connections"]) >= 2:
-            x1 = 40 + net_code * 5
-            y1 = 40 + net_code * 5
-            sch_lines.append(f' (wire (pts (xy {x1} {y1}) (xy {x1+10} {y1+10})) (stroke (width 0)) (uuid "{gen_uuid()}"))')
-
-    sch_lines.append(')')
-    schematic = "\n".join(sch_lines)
-
-    # Step 3: Build KiCad PCB
-    pcb_lines = [f'(kicad_pcb (version 20240108) (generator ai-pcb-groq) (uuid "{gen_uuid()}")']
-    pcb_lines.append(' (paper "A4")')
-    pcb_lines.append(' (layers (0 "F.Cu" signal) (31 "B.Cu" signal))')
-
-    for c in design.get("components", []):
-        pcb_x = c["x"] / 2.54
-        pcb_y = c["y"] / 2.54
-        pcb_lines.append(f' (footprint "{c["footprint"]}" (layer "F.Cu") (at {pcb_x} {pcb_y} 0) (uuid "{gen_uuid()}")')
-        pcb_lines.append(f' (property "Reference" "{c["ref"]}")')
-        pcb_lines.append(' )')
-
-    pcb_lines.append(' (segment (start 20 20) (end 40 20) (width 0.25) (layer "F.Cu") (net 0))')
-    pcb_lines.append(')')
-    pcb_file = "\n".join(pcb_lines)
-
-    # Step 4: BOM
-    bom_json = [{"Ref": c["ref"], "Value": c["value"], "Footprint": c["footprint"], "Qty": "1"} for c in design.get("components", [])]
-    bom_csv = "Ref,Value,Footprint,Qty\n" + "\n".join([f"{r['Ref']},{r['Value']},{r['Footprint']},{r['Qty']}" for r in bom_json])
-
-    return jsonify({
-        "schematic": schematic,
-        "pcb": pcb_file,
-        "bom_json": bom_json,
-        "bom_csv": bom_csv
-    })
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == '__main__': app.run(host='0.0.0.0', port=5000)

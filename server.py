@@ -6,8 +6,11 @@ from openai import OpenAI
 
 app = Flask(__name__, static_folder='static')
 
-# Use OpenAI. If you want free, swap to Groq: from groq import Groq
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# NVIDIA NIM API Client
+client = OpenAI(
+    base_url="https://integrate.api.nvidia.com/v1",
+    api_key=os.environ.get("NVIDIA_API_KEY")
+)
 
 def gen_uuid():
     return str(uuid.uuid4())
@@ -16,54 +19,57 @@ def gen_uuid():
 def home():
     return send_from_directory('.', 'index.html')
 
-@app.route('/static/<path:path>') # FIXED: no colon here
+@app.route('/static/<path:path>')
 def static_files(path):
     return send_from_directory('static', path)
 
 @app.route('/generate', methods=['POST'])
 def generate():
     data = request.json
-    prompt = data.get('prompt', '')
+    prompt = data.get('prompt', '').strip()
 
     if not prompt:
-        return jsonify({"error": "Prompt is required"}), 400
+        return jsonify({"error": "Please enter a circuit description"}), 400
 
-    # Step 1: Ask AI to design the circuit and return JSON netlist
+    # Step 1: Ask NVIDIA Llama 3.1 to design the circuit
     system_prompt = """
-    You are a KiCad PCB designer. Given a user request, output ONLY valid JSON with this exact format:
+    You are an expert KiCad PCB designer. Return ONLY valid JSON.
+    JSON format:
     {
       "components": [
-        {"ref": "U1", "value": "CD74HC4067", "footprint": "Package_SO:SOIC-24", "x": 100, "y": 100}
+        {"ref": "R1", "value": "10k", "footprint": "Resistor_SMD:R_0805", "x": 30, "y": 40}
       ],
       "nets": [
-        {"name": "3V3", "connections": ["U1.24", "U2.5"]}
+        {"name": "5V", "connections": ["U1.1", "C1.1"]}
       ]
     }
     Rules:
-    1. Use standard KiCad footprints like Resistor_SMD:R_0805, Package_SO:SOIC-24, Connector:Conn_01x02
-    2. Place components on 100x80mm grid. No overlap. x: 20 to 180, y: 20 to 120
-    3. Connect all power pins: VCC, GND
-    4. For 8S BMS use CD74HC4067, INA219, ESP8266
+    1. Use standard KiCad v8 footprints: Resistor_SMD:R_0805, Capacitor_SMD:C_0805, Package_SO:SOIC-24, Connector:Conn_01x02, MCU_Module:ESP8266_NodeMCU
+    2. Place components on 100x80mm grid. x: 20 to 180, y: 20 to 120. No overlap.
+    3. Connect power: VCC, GND, 3V3, 5V
+    4. For BMS: use CD74HC4067, INA219. For Buck: use LM2596. For MCU: use ESP8266 or ESP32
     """
 
     try:
         completion = client.chat.completions.create(
-            model="gpt-4o", # For free use: "llama-3.1-70b-versatile" with Groq client
+            model="meta/llama-3.1-70b-instruct",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": f"Design a circuit for: {prompt}"}
             ],
-            response_format={"type": "json_object"},
-            temperature=0.2
+            temperature=0.1,
+            top_p=0.7,
+            max_tokens=1024,
+            response_format={"type": "json_object"}
         )
         design = json.loads(completion.choices[0].message.content)
     except Exception as e:
-        return jsonify({"error": f"AI Error: {str(e)}. Did you set OPENAI_API_KEY?"}), 500
+        return jsonify({"error": f"NVIDIA API Error: {str(e)}. Check NVIDIA_API_KEY in Render"}), 500
 
-    # Step 2: Build REAL KiCad Schematic with pins and wires
-    sch_lines = [f'(kicad_sch (version 20240108) (generator ai-pcb) (uuid "{gen_uuid()}")']
-    sch_lines.append(f' (title "AI Generated: {prompt}")')
-    sch_lines.append(' (lib_symbols (symbol "Device:R") (symbol "Device:C") (symbol "Package_SO:SOIC-24") (symbol "Connector:Conn_01x02") (symbol "MCU_Module:ESP8266_NodeMCU"))')
+    # Step 2: Build REAL KiCad Schematic
+    sch_lines = [f'(kicad_sch (version 20240108) (generator ai-pcb-nvidia) (uuid "{gen_uuid()}")']
+    sch_lines.append(f' (title "AI PCB: {prompt}")')
+    sch_lines.append(' (lib_symbols (symbol "Device:R") (symbol "Device:C") (symbol "Package_SO:SOIC-24") (symbol "Connector:Conn_01x02") (symbol "Regulator_Linear:LM2596") (symbol "MCU_Module:ESP8266_NodeMCU"))')
 
     for c in design.get("components", []):
         sch_lines.append(f' (symbol (lib_id "{c["footprint"]}") (at {c["x"]} {c["y"]} 0) (uuid "{gen_uuid()}")')
@@ -75,27 +81,27 @@ def generate():
     for n in design.get("nets", []):
         net_code += 1
         sch_lines.append(f' (net (code {net_code}) (name "{n["name"]}") )')
-        # Connect first 2 pins in the net with a wire
         if len(n["connections"]) >= 2:
-            sch_lines.append(f' (wire (pts (xy {100+net_code*5} {100+net_code*5}) (xy {110+net_code*5} {110+net_code*5})) (stroke (width 0)) (uuid "{gen_uuid()}"))')
+            x1 = 40 + net_code * 3
+            y1 = 40 + net_code * 3
+            sch_lines.append(f' (wire (pts (xy {x1} {y1}) (xy {x1+10} {y1+10})) (stroke (width 0)) (uuid "{gen_uuid()}"))')
 
     sch_lines.append(')')
     schematic = "\n".join(sch_lines)
 
-    # Step 3: Build KiCad PCB with footprints
-    pcb_lines = [f'(kicad_pcb (version 20240108) (generator ai-pcb) (uuid "{gen_uuid()}")']
+    # Step 3: Build KiCad PCB
+    pcb_lines = [f'(kicad_pcb (version 20240108) (generator ai-pcb-nvidia) (uuid "{gen_uuid()}")']
     pcb_lines.append(' (paper "A4")')
     pcb_lines.append(' (layers (0 "F.Cu" signal) (31 "B.Cu" signal))')
 
     for c in design.get("components", []):
-        pcb_x = c["x"] / 2.54 # mm to inch
+        pcb_x = c["x"] / 2.54
         pcb_y = c["y"] / 2.54
         pcb_lines.append(f' (footprint "{c["footprint"]}" (layer "F.Cu") (at {pcb_x} {pcb_y} 0) (uuid "{gen_uuid()}")')
         pcb_lines.append(f' (property "Reference" "{c["ref"]}")')
         pcb_lines.append(' )')
 
-    # Add 1 example track
-    pcb_lines.append(' (segment (start 20 20) (end 30 20) (width 0.25) (layer "F.Cu") (net 0))')
+    pcb_lines.append(' (segment (start 20 20) (end 40 20) (width 0.25) (layer "F.Cu") (net 0))')
     pcb_lines.append(')')
     pcb_file = "\n".join(pcb_lines)
 

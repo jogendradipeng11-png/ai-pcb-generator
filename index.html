@@ -5,48 +5,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI PCB Generator</title>
 <link rel="stylesheet" href="/static/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 </head>
 <body>
   <div class="container">
     <h1>⚡ AI PCB Generator</h1>
-    <p>Describe your circuit in plain English. 
-    <br>Example: "8S 100A LiFePO4 BMS with CD74HC4067 cell monitoring and INA219 current sensor"</p>
+    <p>Describe your circuit. Example: "8S 100A LiFePO4 BMS with CD74HC4067 and INA219"</p>
     
-    <textarea id="prompt" placeholder="Describe your circuit...">8S 100A LiFePO4 BMS with CD74HC4067 and INA219</textarea>
-    
+    <textarea id="prompt">8S 100A LiFePO4 BMS with CD74HC4067 and INA219</textarea>
     <button id="generateBtn">Generate PCB</button>
-    
-    <div id="loading" class="hidden">⏳ Generating schematic + PCB...</div>
+    <div id="loading" class="hidden">⏳ Generating schematic + BOM + 3D...</div>
     
     <div id="result" class="hidden">
       <h2>Generated Design</h2>
       
-      <h3>📐 Schematic Preview</h3>
-      <div id="schematicCanvas"></div>
+      <h3>📐 Schematic</h3>
+      <pre id="schCode"></pre>
+      
+      <h3>📦 3D PCB Preview</h3>
+      <div id="pcb3d"></div>
       
       <h3>📋 Bill of Materials</h3>
       <table id="bomTable"></table>
 
       <div class="files">
-        <a id="schLink" download="circuit.sch">📄 Download .sch</a>
+        <a id="schLink" download="circuit.kicad_sch">📄 Download .kicad_sch</a>
         <a id="bomLink" download="BOM.csv">📋 Download BOM.csv</a>
       </div>
-      
-      <h3>🤖 AI Explanation</h3>
-      <pre id="codeOutput"></pre>
     </div>
   </div>
 
-<script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
 const btn = document.getElementById('generateBtn');
 const promptEl = document.getElementById('prompt');
 const loading = document.getElementById('loading');
 const result = document.getElementById('result');
-const schematicCanvas = document.getElementById('schematicCanvas');
-const bomTable = document.getElementById('bomTable');
-const schLink = document.getElementById('schLink');
-const bomLink = document.getElementById('bomLink');
-const codeOutput = document.getElementById('codeOutput');
 
 btn.onclick = async () => {
   const prompt = promptEl.value.trim();
@@ -54,46 +57,76 @@ btn.onclick = async () => {
   
   loading.classList.remove('hidden');
   result.classList.add('hidden');
-  schematicCanvas.innerHTML = "";
-  bomTable.innerHTML = "";
   
-  try {
-    const res = await fetch('/generate', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({prompt})
-    });
-    
-    if(!res.ok) throw new Error("Server error: " + res.status);
-    
-    const data = await res.json();
-    loading.classList.add('hidden');
-    result.classList.remove('hidden');
-    
-    // 1. Render Schematic as SVG
-    schematicCanvas.innerHTML = data.schematic_svg;
-    
-    // 2. Render BOM as Table
-    let tableHTML = "<tr><th>Ref</th><th>Value</th><th>Footprint</th><th>Qty</th></tr>";
-    data.bom_json.forEach(row => {
-      tableHTML += `<tr><td>${row.Ref}</td><td>${row.Value}</td><td>${row.Footprint}</td><td>${row.Qty}</td></tr>`;
-    });
-    bomTable.innerHTML = tableHTML;
-    
-    // 3. Download links
-    const schBlob = new Blob([data.schematic], {type: 'text/plain'});
-    schLink.href = URL.createObjectURL(schBlob);
-    
-    const bomBlob = new Blob([data.bom_csv], {type: 'text/csv'});
-    bomLink.href = URL.createObjectURL(bomBlob);
-    
-    codeOutput.textContent = data.explanation;
-    
-  } catch(err) {
-    loading.classList.add('hidden');
-    alert("Error: " + err.message);
-    console.error(err);
+  const res = await fetch('/generate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({prompt})
+  });
+  
+  const data = await res.json();
+  loading.classList.add('hidden');
+  result.classList.remove('hidden');
+  
+  // 1. Schematic Code
+  document.getElementById('schCode').textContent = data.schematic;
+  
+  // 2. BOM Table
+  let tableHTML = "<tr><th>Ref</th><th>Value</th><th>Footprint</th><th>Qty</th></tr>";
+  data.bom_json.forEach(row => {
+    tableHTML += `<tr><td>${row.Ref}</td><td>${row.Value}</td><td>${row.Footprint}</td><td>${row.Qty}</td></tr>`;
+  });
+  document.getElementById('bomTable').innerHTML = tableHTML;
+  
+  // 3. 3D PCB
+  render3DPCB(data.pcb_3d);
+  
+  // 4. Downloads
+  const schBlob = new Blob([data.schematic], {type: 'text/plain'});
+  schLink.href = URL.createObjectURL(schBlob);
+  const bomBlob = new Blob([data.bom_csv], {type: 'text/csv'});
+  bomLink.href = URL.createObjectURL(bomBlob);
+}
+
+function render3DPCB(components) {
+  const container = document.getElementById('pcb3d');
+  container.innerHTML = "";
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1e293b);
+  const camera = new THREE.PerspectiveCamera(75, container.clientWidth / 300, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({antialias: true});
+  renderer.setSize(container.clientWidth, 300);
+  container.appendChild(renderer.domElement);
+  
+  const controls = new OrbitControls(camera, renderer.domElement);
+  camera.position.set(0, 50, 100);
+  controls.update();
+  
+  // PCB Board
+  const boardGeo = new THREE.BoxGeometry(80, 50, 2);
+  const boardMat = new THREE.MeshStandardMaterial({color: 0x065f46});
+  const board = new THREE.Mesh(boardGeo, boardMat);
+  scene.add(board);
+  
+  // Components
+  components.forEach(c => {
+    const geo = new THREE.BoxGeometry(c.w, c.h, c.d);
+    const mat = new THREE.MeshStandardMaterial({color: c.color});
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(c.x, c.y, 2);
+    scene.add(mesh);
+  });
+  
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(0, 0, 100);
+  scene.add(light);
+  scene.add(new THREE.AmbientLight(0x404040));
+  
+  function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
   }
+  animate();
 }
 </script>
 </body>

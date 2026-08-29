@@ -6,7 +6,7 @@ from openai import OpenAI
 
 app = Flask(__name__, static_folder='static')
 
-# GROQ API CLIENT - FREE 14,400 requests/day
+# GROQ API CLIENT
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.environ.get("GROQ_API_KEY")
@@ -31,7 +31,6 @@ def generate():
     if not prompt:
         return jsonify({"error": "Please enter a circuit description"}), 400
 
-    # Step 1: Ask Groq Llama 3.1 to design the circuit
     system_prompt = """
     You are an expert KiCad PCB designer. Return ONLY valid JSON.
     JSON format:
@@ -44,23 +43,22 @@ def generate():
       ]
     }
     Rules:
-    1. Use standard KiCad v8 footprints: Resistor_SMD:R_0805, Capacitor_SMD:C_0805, Package_SO:SOIC-24, Connector:Conn_01x02, MCU_Module:ESP8266_NodeMCU, Regulator_Linear:LM2596
+    1. Use standard KiCad v8 footprints: Resistor_SMD:R_0805, Capacitor_SMD:C_0805, Package_SO:SOIC-24, Connector:Conn_01x02, MCU_Module:ESP8266_NodeMCU, Regulator_Linear:LM2596, Amplifier_Current:INA219, Mux_Analog:CD74HC4067
     2. Place components on 100x80mm grid. x: 20 to 180, y: 20 to 120. No overlap.
     3. Connect power: VCC, GND, 3V3, 5V
-    4. For BMS: use CD74HC4067, INA219. For Buck: use LM2596. For MCU: use ESP8266 or ESP32
-    5. For 8S BMS: 8 voltage sense lines to CD74HC4067, INA219 for current
+    4. For 8S BMS: 8 voltage sense lines to CD74HC4067, INA219 for current sense
     """
 
     try:
         completion = client.chat.completions.create(
-            model="llama-3.1-70b-versatile", # GROQ FREE MODEL
+            model="llama-3.3-70b-versatile", # <-- NEW WORKING MODEL
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Design a circuit for: {prompt}"}
             ],
             temperature=0.1,
             top_p=0.7,
-            max_tokens=1024,
+            max_tokens=1200,
             response_format={"type": "json_object"}
         )
         design = json.loads(completion.choices[0].message.content)
@@ -70,7 +68,7 @@ def generate():
     # Step 2: Build REAL KiCad Schematic
     sch_lines = [f'(kicad_sch (version 20240108) (generator ai-pcb-groq) (uuid "{gen_uuid()}")']
     sch_lines.append(f' (title "AI PCB: {prompt}")')
-    sch_lines.append(' (lib_symbols (symbol "Device:R") (symbol "Device:C") (symbol "Package_SO:SOIC-24") (symbol "Connector:Conn_01x02") (symbol "Regulator_Linear:LM2596") (symbol "MCU_Module:ESP8266_NodeMCU") (symbol "Amplifier_Current:INA219") (symbol "Mux_Analog:CD74HC4067"))')
+    sch_lines.append(' (lib_symbols (symbol "Device:R") (symbol "Device:C") (symbol "Package_SO:SOIC-24") (symbol "Connector:Conn_01x02") (symbol "Regulator_Linear:LM2596") (symbol "Amplifier_Current:INA219") (symbol "Mux_Analog:CD74HC4067"))')
 
     for c in design.get("components", []):
         sch_lines.append(f' (symbol (lib_id "{c["footprint"]}") (at {c["x"]} {c["y"]} 0) (uuid "{gen_uuid()}")')

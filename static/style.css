@@ -1,9 +1,19 @@
-body { font-family: system-ui; background:#0f172a; color:#e2e8f0; margin:0; padding:20px; }
-.container { max-width: 800px; margin: auto; }
-h1 { color:#38bdf8; }
-textarea { width:100%; height:120px; background:#1e293b; color:white; border:1px solid #334155; border-radius:8px; padding:12px; font-size:16px; }
-button { background:#38bdf8; color:#0f172a; border:none; padding:12px 24px; border-radius:8px; font-weight:700; cursor:pointer; margin-top:12px; }
-button:hover { background:#0ea5e9; }
-.hidden { display:none; }
-.files a { display:inline-block; background:#1e293b; padding:10px 16px; border-radius:6px; margin-right:10px; text-decoration:none; color:#38bdf8; }
-pre { background:#1e293b; padding:16px; border-radius:8px; overflow-x:auto; }
+body { font-family: Arial; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }
+.container { max-width: 1000px; margin: auto; }
+h1 { color: #38bdf8; }
+.input-box { display: flex; gap: 10px; margin: 20px 0; }
+input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: white; }
+button { padding: 12px 20px; border: none; border-radius: 8px; background: #38bdf8; color: black; font-weight: bold; cursor: pointer; }
+button:hover { background: #0ea5e9; }
+.hidden { display: none; }
+#loader { color: #facc15; }
+.tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+.tab-btn { background: #1e293b; color: white; }
+.tab-btn.active { background: #38bdf8; color: black; }
+.tab-content { display: none; background: #1e293b; padding: 20px; border-radius: 8px; }
+.tab-content.active { display: block; }
+pre { background: #0f172a; padding: 10px; overflow-x: auto; max-height: 400px; }
+#pcb3d { width: 100%; height: 400px; background: #000; }
+table { width: 100%; border-collapse: collapse; }
+th, td { border: 1px solid #334155; padding: 8px; text-align: left; }
+th { background: #334155; }

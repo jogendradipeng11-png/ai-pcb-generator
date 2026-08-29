@@ -6,7 +6,7 @@ from openai import OpenAI
 
 app = Flask(__name__, static_folder='static')
 
-# NVIDIA NIM API Client
+# NVIDIA NIM API CLIENT - PUT IT HERE
 client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
     api_key=os.environ.get("NVIDIA_API_KEY")
@@ -52,7 +52,7 @@ def generate():
 
     try:
         completion = client.chat.completions.create(
-            model="meta/llama-3.1-70b-instruct",
+            model="meta/llama-3.1-70b-instruct", # NVIDIA model
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Design a circuit for: {prompt}"}

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI PCB Generator</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>⚡ AI PCB Generator</h1>
+    <p>Describe your circuit in plain English. Example: "8S 100A LiFePO4 BMS with CD74HC4067 cell monitoring and INA219 current sensor"</p>
+    
+    <textarea id="prompt" placeholder="Describe your circuit..."></textarea>
+    
+    <button id="generateBtn">Generate PCB</button>
+    
+    <div id="loading" class="hidden">Generating schematic + PCB...</div>
+    
+    <div id="result" class="hidden">
+      <h2>Generated Files</h2>
+      <div class="files">
+        <a id="schLink" download="circuit.sch">📄 Download Schematic</a>
+        <a id="bomLink" download="BOM.csv">📋 Download BOM</a>
+      </div>
+      <pre id="codeOutput"></pre>
+    </div>
+  </div>
+
+<script>
+const btn = document.getElementById('generateBtn');
+const promptEl = document.getElementById('prompt');
+const loading = document.getElementById('loading');
+const result = document.getElementById('result');
+
+btn.onclick = async () => {
+  const prompt = promptEl.value.trim();
+  if(!prompt) return alert("Please describe your circuit");
+  
+  loading.classList.remove('hidden');
+  result.classList.add('hidden');
+  
+  const res = await fetch('/generate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({prompt})
+  });
+  
+  const data = await res.json();
+  loading.classList.add('hidden');
+  result.classList.remove('hidden');
+  
+  // Create downloadable files
+  const schBlob = new Blob([data.schematic], {type: 'text/plain'});
+  schLink.href = URL.createObjectURL(schBlob);
+  
+  const bomBlob = new Blob([data.bom], {type: 'text/csv'});
+  bomLink.href = URL.createObjectURL(bomBlob);
+  
+  codeOutput.textContent = data.explanation;
+}
+</script>
+</body>
+</html>

@@ -6,10 +6,10 @@ from openai import OpenAI
 
 app = Flask(__name__, static_folder='static')
 
-# NVIDIA NIM API CLIENT - PUT IT HERE
+# GROQ API CLIENT - FREE 14,400 requests/day
 client = OpenAI(
-    base_url="https://integrate.api.nvidia.com/v1",
-    api_key=os.environ.get("NVIDIA_API_KEY")
+    base_url="https://api.groq.com/openai/v1",
+    api_key=os.environ.get("GROQ_API_KEY")
 )
 
 def gen_uuid():
@@ -31,7 +31,7 @@ def generate():
     if not prompt:
         return jsonify({"error": "Please enter a circuit description"}), 400
 
-    # Step 1: Ask NVIDIA Llama 3.1 to design the circuit
+    # Step 1: Ask Groq Llama 3.1 to design the circuit
     system_prompt = """
     You are an expert KiCad PCB designer. Return ONLY valid JSON.
     JSON format:
@@ -44,15 +44,16 @@ def generate():
       ]
     }
     Rules:
-    1. Use standard KiCad v8 footprints: Resistor_SMD:R_0805, Capacitor_SMD:C_0805, Package_SO:SOIC-24, Connector:Conn_01x02, MCU_Module:ESP8266_NodeMCU
+    1. Use standard KiCad v8 footprints: Resistor_SMD:R_0805, Capacitor_SMD:C_0805, Package_SO:SOIC-24, Connector:Conn_01x02, MCU_Module:ESP8266_NodeMCU, Regulator_Linear:LM2596
     2. Place components on 100x80mm grid. x: 20 to 180, y: 20 to 120. No overlap.
     3. Connect power: VCC, GND, 3V3, 5V
     4. For BMS: use CD74HC4067, INA219. For Buck: use LM2596. For MCU: use ESP8266 or ESP32
+    5. For 8S BMS: 8 voltage sense lines to CD74HC4067, INA219 for current
     """
 
     try:
         completion = client.chat.completions.create(
-            model="meta/llama-3.1-70b-instruct", # NVIDIA model
+            model="llama-3.1-70b-versatile", # GROQ FREE MODEL
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Design a circuit for: {prompt}"}
@@ -64,12 +65,12 @@ def generate():
         )
         design = json.loads(completion.choices[0].message.content)
     except Exception as e:
-        return jsonify({"error": f"NVIDIA API Error: {str(e)}. Check NVIDIA_API_KEY in Render"}), 500
+        return jsonify({"error": f"Groq API Error: {str(e)}. Check GROQ_API_KEY in Render"}), 500
 
     # Step 2: Build REAL KiCad Schematic
-    sch_lines = [f'(kicad_sch (version 20240108) (generator ai-pcb-nvidia) (uuid "{gen_uuid()}")']
+    sch_lines = [f'(kicad_sch (version 20240108) (generator ai-pcb-groq) (uuid "{gen_uuid()}")']
     sch_lines.append(f' (title "AI PCB: {prompt}")')
-    sch_lines.append(' (lib_symbols (symbol "Device:R") (symbol "Device:C") (symbol "Package_SO:SOIC-24") (symbol "Connector:Conn_01x02") (symbol "Regulator_Linear:LM2596") (symbol "MCU_Module:ESP8266_NodeMCU"))')
+    sch_lines.append(' (lib_symbols (symbol "Device:R") (symbol "Device:C") (symbol "Package_SO:SOIC-24") (symbol "Connector:Conn_01x02") (symbol "Regulator_Linear:LM2596") (symbol "MCU_Module:ESP8266_NodeMCU") (symbol "Amplifier_Current:INA219") (symbol "Mux_Analog:CD74HC4067"))')
 
     for c in design.get("components", []):
         sch_lines.append(f' (symbol (lib_id "{c["footprint"]}") (at {c["x"]} {c["y"]} 0) (uuid "{gen_uuid()}")')
@@ -82,15 +83,15 @@ def generate():
         net_code += 1
         sch_lines.append(f' (net (code {net_code}) (name "{n["name"]}") )')
         if len(n["connections"]) >= 2:
-            x1 = 40 + net_code * 3
-            y1 = 40 + net_code * 3
+            x1 = 40 + net_code * 5
+            y1 = 40 + net_code * 5
             sch_lines.append(f' (wire (pts (xy {x1} {y1}) (xy {x1+10} {y1+10})) (stroke (width 0)) (uuid "{gen_uuid()}"))')
 
     sch_lines.append(')')
     schematic = "\n".join(sch_lines)
 
     # Step 3: Build KiCad PCB
-    pcb_lines = [f'(kicad_pcb (version 20240108) (generator ai-pcb-nvidia) (uuid "{gen_uuid()}")']
+    pcb_lines = [f'(kicad_pcb (version 20240108) (generator ai-pcb-groq) (uuid "{gen_uuid()}")']
     pcb_lines.append(' (paper "A4")')
     pcb_lines.append(' (layers (0 "F.Cu" signal) (31 "B.Cu" signal))')
 

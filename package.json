@@ -1,0 +1,9 @@
+{
+  "name": "ai-pcb",
+  "dependencies": {
+    "@tscircuit/core": "latest"
+  },
+  "scripts": {
+    "build": "tsci build"
+  }
+}

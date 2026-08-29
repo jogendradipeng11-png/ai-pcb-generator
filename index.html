@@ -9,7 +9,7 @@
 <body>
   <div class="container">
     <h1>⚡ AI PCB Generator</h1>
-    <p>Describe your circuit in plain English. Example: "8S 100A LiFePO4 BMS with CD74HC4067 cell monitoring and INA219 current sensor"</p>
+    <p>Describe your circuit. Example: "8S 100A LiFePO4 BMS with CD74HC4067 and INA219"</p>
     
     <textarea id="prompt" placeholder="Describe your circuit..."></textarea>
     
@@ -18,11 +18,20 @@
     <div id="loading" class="hidden">Generating schematic + PCB...</div>
     
     <div id="result" class="hidden">
-      <h2>Generated Files</h2>
+      <h2>Generated Design</h2>
+      
+      <h3>Schematic Preview</h3>
+      <div id="schematicCanvas"></div>
+      
+      <h3>BOM</h3>
+      <table id="bomTable"></table>
+
       <div class="files">
-        <a id="schLink" download="circuit.sch">📄 Download Schematic</a>
-        <a id="bomLink" download="BOM.csv">📋 Download BOM</a>
+        <a id="schLink" download="circuit.sch">📄 Download .sch</a>
+        <a id="bomLink" download="BOM.csv">📋 Download BOM.csv</a>
       </div>
+      
+      <h3>AI Explanation</h3>
       <pre id="codeOutput"></pre>
     </div>
   </div>
@@ -32,6 +41,8 @@ const btn = document.getElementById('generateBtn');
 const promptEl = document.getElementById('prompt');
 const loading = document.getElementById('loading');
 const result = document.getElementById('result');
+const schematicCanvas = document.getElementById('schematicCanvas');
+const bomTable = document.getElementById('bomTable');
 
 btn.onclick = async () => {
   const prompt = promptEl.value.trim();
@@ -50,11 +61,21 @@ btn.onclick = async () => {
   loading.classList.add('hidden');
   result.classList.remove('hidden');
   
-  // Create downloadable files
+  // 1. Render Schematic as SVG
+  schematicCanvas.innerHTML = data.schematic_svg;
+  
+  // 2. Render BOM as Table
+  let tableHTML = "<tr><th>Ref</th><th>Value</th><th>Footprint</th><th>Qty</th></tr>";
+  data.bom_json.forEach(row => {
+    tableHTML += `<tr><td>${row.Ref}</td><td>${row.Value}</td><td>${row.Footprint}</td><td>${row.Qty}</td></tr>`;
+  });
+  bomTable.innerHTML = tableHTML;
+  
+  // 3. Download links
   const schBlob = new Blob([data.schematic], {type: 'text/plain'});
   schLink.href = URL.createObjectURL(schBlob);
   
-  const bomBlob = new Blob([data.bom], {type: 'text/csv'});
+  const bomBlob = new Blob([data.bom_csv], {type: 'text/csv'});
   bomLink.href = URL.createObjectURL(bomBlob);
   
   codeOutput.textContent = data.explanation;

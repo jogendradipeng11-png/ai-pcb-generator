@@ -9,21 +9,22 @@
 <body>
   <div class="container">
     <h1>⚡ AI PCB Generator</h1>
-    <p>Describe your circuit. Example: "8S 100A LiFePO4 BMS with CD74HC4067 and INA219"</p>
+    <p>Describe your circuit in plain English. 
+    <br>Example: "8S 100A LiFePO4 BMS with CD74HC4067 cell monitoring and INA219 current sensor"</p>
     
-    <textarea id="prompt" placeholder="Describe your circuit..."></textarea>
+    <textarea id="prompt" placeholder="Describe your circuit...">8S 100A LiFePO4 BMS with CD74HC4067 and INA219</textarea>
     
     <button id="generateBtn">Generate PCB</button>
     
-    <div id="loading" class="hidden">Generating schematic + PCB...</div>
+    <div id="loading" class="hidden">⏳ Generating schematic + PCB...</div>
     
     <div id="result" class="hidden">
       <h2>Generated Design</h2>
       
-      <h3>Schematic Preview</h3>
+      <h3>📐 Schematic Preview</h3>
       <div id="schematicCanvas"></div>
       
-      <h3>BOM</h3>
+      <h3>📋 Bill of Materials</h3>
       <table id="bomTable"></table>
 
       <div class="files">
@@ -31,7 +32,7 @@
         <a id="bomLink" download="BOM.csv">📋 Download BOM.csv</a>
       </div>
       
-      <h3>AI Explanation</h3>
+      <h3>🤖 AI Explanation</h3>
       <pre id="codeOutput"></pre>
     </div>
   </div>
@@ -43,6 +44,9 @@ const loading = document.getElementById('loading');
 const result = document.getElementById('result');
 const schematicCanvas = document.getElementById('schematicCanvas');
 const bomTable = document.getElementById('bomTable');
+const schLink = document.getElementById('schLink');
+const bomLink = document.getElementById('bomLink');
+const codeOutput = document.getElementById('codeOutput');
 
 btn.onclick = async () => {
   const prompt = promptEl.value.trim();
@@ -50,35 +54,46 @@ btn.onclick = async () => {
   
   loading.classList.remove('hidden');
   result.classList.add('hidden');
+  schematicCanvas.innerHTML = "";
+  bomTable.innerHTML = "";
   
-  const res = await fetch('/generate', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({prompt})
-  });
-  
-  const data = await res.json();
-  loading.classList.add('hidden');
-  result.classList.remove('hidden');
-  
-  // 1. Render Schematic as SVG
-  schematicCanvas.innerHTML = data.schematic_svg;
-  
-  // 2. Render BOM as Table
-  let tableHTML = "<tr><th>Ref</th><th>Value</th><th>Footprint</th><th>Qty</th></tr>";
-  data.bom_json.forEach(row => {
-    tableHTML += `<tr><td>${row.Ref}</td><td>${row.Value}</td><td>${row.Footprint}</td><td>${row.Qty}</td></tr>`;
-  });
-  bomTable.innerHTML = tableHTML;
-  
-  // 3. Download links
-  const schBlob = new Blob([data.schematic], {type: 'text/plain'});
-  schLink.href = URL.createObjectURL(schBlob);
-  
-  const bomBlob = new Blob([data.bom_csv], {type: 'text/csv'});
-  bomLink.href = URL.createObjectURL(bomBlob);
-  
-  codeOutput.textContent = data.explanation;
+  try {
+    const res = await fetch('/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt})
+    });
+    
+    if(!res.ok) throw new Error("Server error: " + res.status);
+    
+    const data = await res.json();
+    loading.classList.add('hidden');
+    result.classList.remove('hidden');
+    
+    // 1. Render Schematic as SVG
+    schematicCanvas.innerHTML = data.schematic_svg;
+    
+    // 2. Render BOM as Table
+    let tableHTML = "<tr><th>Ref</th><th>Value</th><th>Footprint</th><th>Qty</th></tr>";
+    data.bom_json.forEach(row => {
+      tableHTML += `<tr><td>${row.Ref}</td><td>${row.Value}</td><td>${row.Footprint}</td><td>${row.Qty}</td></tr>`;
+    });
+    bomTable.innerHTML = tableHTML;
+    
+    // 3. Download links
+    const schBlob = new Blob([data.schematic], {type: 'text/plain'});
+    schLink.href = URL.createObjectURL(schBlob);
+    
+    const bomBlob = new Blob([data.bom_csv], {type: 'text/csv'});
+    bomLink.href = URL.createObjectURL(bomBlob);
+    
+    codeOutput.textContent = data.explanation;
+    
+  } catch(err) {
+    loading.classList.add('hidden');
+    alert("Error: " + err.message);
+    console.error(err);
+  }
 }
 </script>
 </body>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI PCB Generator</title>
+<title>AI PCB Generator - NVIDIA</title>
 <link rel="stylesheet" href="/static/style.css">
 <script type="importmap">
 {
@@ -15,119 +15,40 @@
 </script>
 </head>
 <body>
-  <div class="container">
-    <h1>⚡ AI PCB Generator</h1>
-    <p>Describe your circuit. Example: "8S 100A LiFePO4 BMS with CD74HC4067 and INA219"</p>
-    
-    <textarea id="prompt">8S 100A LiFePO4 BMS with CD74HC4067 and INA219</textarea>
-    <button id="generateBtn">Generate PCB</button>
-    <div id="loading" class="hidden">⏳ Generating schematic + BOM + 3D...</div>
-    
-    <div id="result" class="hidden">
-      <h2>Generated Design</h2>
-      
-      <h3>📐 Schematic</h3>
-      <pre id="schCode"></pre>
-      
-      <h3>📦 3D PCB Preview</h3>
-      <div id="pcb3d"></div>
-      
-      <h3>📋 Bill of Materials</h3>
-      <table id="bomTable"></table>
+<div class="container">
+  <h1>⚡ AI PCB Generator</h1>
+  <p>Powered by NVIDIA Llama 3.1. Describe any circuit.</p>
 
-      <div class="files">
-        <a id="schLink" download="circuit.kicad_sch">📄 Download .kicad_sch</a>
-        <a id="bomLink" download="BOM.csv">📋 Download BOM.csv</a>
-      </div>
-    </div>
+  <div class="input-box">
+    <input type="text" id="prompt" placeholder="Ex: 8S 100A LiFePO4 BMS with CD74HC4067 and INA219">
+    <button id="generateBtn">Generate PCB</button>
   </div>
 
-<script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+  <div id="loader" class="hidden">Generating with NVIDIA... Please wait 10s</div>
 
-const btn = document.getElementById('generateBtn');
-const promptEl = document.getElementById('prompt');
-const loading = document.getElementById('loading');
-const result = document.getElementById('result');
+  <div id="results" class="hidden">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="schematic">📐 Schematic</button>
+      <button class="tab-btn" data-tab="3d">📦 3D PCB Preview</button>
+      <button class="tab-btn" data-tab="bom">📋 Bill of Materials</button>
+    </div>
 
-btn.onclick = async () => {
-  const prompt = promptEl.value.trim();
-  if(!prompt) return alert("Please describe your circuit");
-  
-  loading.classList.remove('hidden');
-  result.classList.add('hidden');
-  
-  const res = await fetch('/generate', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({prompt})
-  });
-  
-  const data = await res.json();
-  loading.classList.add('hidden');
-  result.classList.remove('hidden');
-  
-  // 1. Schematic Code
-  document.getElementById('schCode').textContent = data.schematic;
-  
-  // 2. BOM Table
-  let tableHTML = "<tr><th>Ref</th><th>Value</th><th>Footprint</th><th>Qty</th></tr>";
-  data.bom_json.forEach(row => {
-    tableHTML += `<tr><td>${row.Ref}</td><td>${row.Value}</td><td>${row.Footprint}</td><td>${row.Qty}</td></tr>`;
-  });
-  document.getElementById('bomTable').innerHTML = tableHTML;
-  
-  // 3. 3D PCB
-  render3DPCB(data.pcb_3d);
-  
-  // 4. Downloads
-  const schBlob = new Blob([data.schematic], {type: 'text/plain'});
-  schLink.href = URL.createObjectURL(schBlob);
-  const bomBlob = new Blob([data.bom_csv], {type: 'text/csv'});
-  bomLink.href = URL.createObjectURL(bomBlob);
-}
+    <div id="schematic" class="tab-content active">
+      <pre id="schCode"></pre>
+      <button onclick="downloadFile('design.kicad_sch', document.getElementById('schCode').innerText)">📄 Download.kicad_sch</button>
+    </div>
 
-function render3DPCB(components) {
-  const container = document.getElementById('pcb3d');
-  container.innerHTML = "";
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1e293b);
-  const camera = new THREE.PerspectiveCamera(75, container.clientWidth / 300, 0.1, 1000);
-  const renderer = new THREE.WebGLRenderer({antialias: true});
-  renderer.setSize(container.clientWidth, 300);
-  container.appendChild(renderer.domElement);
-  
-  const controls = new OrbitControls(camera, renderer.domElement);
-  camera.position.set(0, 50, 100);
-  controls.update();
-  
-  // PCB Board
-  const boardGeo = new THREE.BoxGeometry(80, 50, 2);
-  const boardMat = new THREE.MeshStandardMaterial({color: 0x065f46});
-  const board = new THREE.Mesh(boardGeo, boardMat);
-  scene.add(board);
-  
-  // Components
-  components.forEach(c => {
-    const geo = new THREE.BoxGeometry(c.w, c.h, c.d);
-    const mat = new THREE.MeshStandardMaterial({color: c.color});
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(c.x, c.y, 2);
-    scene.add(mesh);
-  });
-  
-  const light = new THREE.DirectionalLight(0xffffff, 1);
-  light.position.set(0, 0, 100);
-  scene.add(light);
-  scene.add(new THREE.AmbientLight(0x404040));
-  
-  function animate() {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
-  }
-  animate();
-}
-</script>
+    <div id="3d" class="tab-content">
+      <div id="pcb3d"></div>
+    </div>
+
+    <div id="bom" class="tab-content">
+      <table id="bomTable"></table>
+      <button onclick="downloadCSV()">📋 Download BOM.csv</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/static/script.js"></script>
 </body>
 </html>

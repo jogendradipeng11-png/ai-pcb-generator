@@ -4,5 +4,5 @@ services:
     runtime: docker
     plan: free
     envVars:
-      - key: GROQ_API_KEY
+      - key: NVIDIA_API_KEY
         sync: false

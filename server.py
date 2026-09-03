@@ -12,14 +12,17 @@ client = None
 def get_client():
     global client
     if client is None:
-        api_key = os.environ.get("GROQ_API_KEY")
+        api_key = os.environ.get("NVIDIA_API_KEY")
         if not api_key:
-            raise RuntimeError("GROQ_API_KEY is not configured")
-        client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+            raise RuntimeError("NVIDIA_API_KEY is not configured")
+        client = OpenAI(
+            api_key=api_key,
+            base_url=os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+        )
     return client
 
 def write_circuit_tsx(description, validation_errors=None):
-    # Ask Groq to generate tscircuit code
+    # Ask the configured OpenAI-compatible provider to generate tscircuit code
     system = """You generate valid tscircuit TSX for index.circuit.tsx. Return only the TSX source code.
 The TSX must export a default function returning one <board> with width and height in mm.
 Place every component inside that board using pcbX and pcbY so footprints do not overlap.
@@ -36,7 +39,7 @@ A5=CC1 and B5=CC2, with 5.1k pulldowns to GND. Include a schematic-ready logical
         correction = "\nPrevious output failed validation. Correct these errors: " + "; ".join(validation_errors)
         correction += "\nReturn a complete replacement with literal <trace from=\"...\" to=\"...\" /> elements."
     resp = get_client().chat.completions.create(
-        model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"),
+        model=os.environ.get("NVIDIA_MODEL", "openai/gpt-oss-20b"),
         messages=[{"role":"system","content":system},{"role":"user","content":f"Design: {description}{correction}"}],
     )
     content = (resp.choices[0].message.content or "").strip()

@@ -36,7 +36,7 @@ A5=CC1 and B5=CC2, with 5.1k pulldowns to GND. Include a schematic-ready logical
         correction = "\nPrevious output failed validation. Correct these errors: " + "; ".join(validation_errors)
         correction += "\nReturn a complete replacement with literal <trace from=\"...\" to=\"...\" /> elements."
     resp = get_client().chat.completions.create(
-        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"),
         messages=[{"role":"system","content":system},{"role":"user","content":f"Design: {description}{correction}"}],
     )
     content = (resp.choices[0].message.content or "").strip()

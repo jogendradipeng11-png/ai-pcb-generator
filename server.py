@@ -96,7 +96,12 @@ def generate_method_error():
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "ok", "provider": "nvidia"})
+    return jsonify({
+        "status": "ok",
+        "provider": "nvidia",
+        "api_key_configured": bool(os.environ.get("NVIDIA_API_KEY")),
+        "model": os.environ.get("NVIDIA_MODEL", "openai/gpt-oss-20b"),
+    })
 
 @app.route('/generate', methods=['POST'])
 def generate():

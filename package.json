@@ -1,7 +1,15 @@
 {
   "name": "ai-pcb",
   "dependencies": {
-    "@tscircuit/core": "latest"
+    "@tscircuit/cli": "^0.1.2021",
+    "@tscircuit/core": "latest",
+    "@tscircuit/capacity-autorouter": "^0.0.866",
+    "circuit-json": "^0.0.479",
+    "format-si-unit": "^0.0.12",
+    "tscircuit": "^0.0.2462",
+    "three": "^0.180.0",
+    "typescript": "^5.8.3",
+    "tsx": "^4.19.4"
   },
   "scripts": {
     "build": "tsci build"

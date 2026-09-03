@@ -18,17 +18,47 @@ img{width:100%;background:#111;border-radius:8px}
 
 <script>
 async function generate() {
-  const prompt = document.getElementById('prompt').value;
-  document.getElementById('loading').style.display = 'block';
-  const res = await fetch('/generate', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
-  const data = await res.json();
-  document.getElementById('loading').style.display = 'none';
+  const promptField = document.getElementById('prompt');
+  const loading = document.getElementById('loading');
+  const result = document.getElementById('result');
+  const prompt = promptField.value.trim();
 
-  document.getElementById('result').innerHTML = `
-    <div><h3>Schematic</h3><img src="data:image/png;base64,${data.schematic_png}"/></div>
-    <div><h3>PCB</h3><img src="data:image/png;base64,${data.pcb_png}"/></div>
-    <a href="data:text/csv,${data.bom_csv}" download="bom.csv">Download BOM</a>
-  `;
+  if (!prompt) {
+    promptField.focus();
+    result.textContent = 'Enter a circuit description first.';
+    return;
+  }
+
+  loading.style.display = 'block';
+  result.textContent = '';
+
+  try {
+    const res = await fetch('/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({prompt})
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      throw new Error(data.error || 'Generation failed.');
+    }
+
+    result.innerHTML = `
+      <p><strong>Circuit test:</strong> ${data.circuit_test.status} (${data.circuit_test.components} components, ${data.circuit_test.traces} connections)</p>
+      <div><h3>Schematic</h3><img alt="Generated schematic" src="data:image/png;base64,${data.schematic_png}"/></div>
+      <div><h3>PCB</h3><img alt="Generated PCB layout" src="data:image/png;base64,${data.pcb_png}"/></div>
+      <a href="${csvUrl(data.bom_csv)}" download="bom.csv">Download BOM</a>
+    `;
+  } catch (error) {
+    result.textContent = error.message;
+  } finally {
+    loading.style.display = 'none';
+  }
+}
+
+function csvUrl(csv) {
+  return `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
 }
 </script>
 </body>

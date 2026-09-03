@@ -1,0 +1,9 @@
+{
+  "name": "generated-pcb-project",
+  "private": true,
+  "dependencies": {
+    "@tscircuit/core": "latest",
+    "circuit-json": "^0.0.479",
+    "format-si-unit": "^0.0.12"
+  }
+}

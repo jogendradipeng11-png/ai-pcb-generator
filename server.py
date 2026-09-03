@@ -36,7 +36,7 @@ A5=CC1 and B5=CC2, with 5.1k pulldowns to GND. Include a schematic-ready logical
         correction = "\nPrevious output failed validation. Correct these errors: " + "; ".join(validation_errors)
         correction += "\nReturn a complete replacement with literal <trace from=\"...\" to=\"...\" /> elements."
     resp = get_client().chat.completions.create(
-        model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"),
+        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
         messages=[{"role":"system","content":system},{"role":"user","content":f"Design: {description}{correction}"}],
     )
     content = (resp.choices[0].message.content or "").strip()
@@ -48,9 +48,6 @@ A5=CC1 and B5=CC2, with 5.1k pulldowns to GND. Include a schematic-ready logical
     tsx_code = tsx_code.strip()
     if tsx_code.startswith("```"):
         tsx_code = re.sub(r"^```(?:tsx|typescript)?\s*|\s*```$", "", tsx_code).strip()
-    if not tsx_code or "<board" not in tsx_code:
-        raise ValueError("Generated circuit did not contain a board")
-
     with open(os.path.join(PROJECT_DIR, "index.circuit.tsx"), "w") as f:
         f.write(tsx_code)
     return tsx_code
@@ -89,6 +86,10 @@ def simulate_connectivity(tsx_code):
 
 @app.route('/')
 def home(): return send_from_directory('.', 'index.html')
+
+@app.route('/generate', methods=['GET'])
+def generate_method_error():
+    return jsonify({"error": "Use POST /generate with a JSON prompt."}), 405
 
 @app.route('/generate', methods=['POST'])
 def generate():

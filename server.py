@@ -18,9 +18,9 @@ def get_client():
         client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
     return client
 
-def write_circuit_tsx(description):
+def write_circuit_tsx(description, validation_errors=None):
     # Ask Groq to generate tscircuit code
-    system = """You generate valid tscircuit TSX for index.circuit.tsx. Return JSON with one key, tsx.
+    system = """You generate valid tscircuit TSX for index.circuit.tsx. Return only the TSX source code.
 The TSX must export a default function returning one <board> with width and height in mm.
 Place every component inside that board using pcbX and pcbY so footprints do not overlap.
 Use realistic components from: <connector>, <chip>, <capacitor>, <resistor>, <led>.
@@ -31,15 +31,25 @@ Keep the design compact and autoroutable on a two-layer board. Do not use markdo
 For USB-C use footprint="usb_c_receptacle_usb2_type_c", pins A4/B9=VBUS, A1/B12=GND,
 A5=CC1 and B5=CC2, with 5.1k pulldowns to GND. Include a schematic-ready logical netlist."""
 
+    correction = ""
+    if validation_errors:
+        correction = "\nPrevious output failed validation. Correct these errors: " + "; ".join(validation_errors)
+        correction += "\nReturn a complete replacement with literal <trace from=\"...\" to=\"...\" /> elements."
     resp = get_client().chat.completions.create(
-        model="openai/gpt-oss-20b",
-        messages=[{"role":"system","content":system},{"role":"user","content":f"Design: {description}"}],
-        response_format={"type":"json_object"} # We'll parse TSX from JSON
+        model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b"),
+        messages=[{"role":"system","content":system},{"role":"user","content":f"Design: {description}{correction}"}],
     )
-    response = json.loads(resp.choices[0].message.content)
-    tsx_code = response.get("tsx", "").strip()
-    if not tsx_code or "<board" not in tsx_code or "<trace" not in tsx_code:
-        raise ValueError("Generated circuit did not contain a board and explicit traces")
+    content = (resp.choices[0].message.content or "").strip()
+    try:
+        response = json.loads(content)
+        tsx_code = response.get("tsx", "") if isinstance(response, dict) else content
+    except json.JSONDecodeError:
+        tsx_code = content
+    tsx_code = tsx_code.strip()
+    if tsx_code.startswith("```"):
+        tsx_code = re.sub(r"^```(?:tsx|typescript)?\s*|\s*```$", "", tsx_code).strip()
+    if not tsx_code or "<board" not in tsx_code:
+        raise ValueError("Generated circuit did not contain a board")
 
     with open(os.path.join(PROJECT_DIR, "index.circuit.tsx"), "w") as f:
         f.write(tsx_code)
@@ -88,9 +98,18 @@ def generate():
         return jsonify({"error": "A circuit description is required."}), 400
 
     try:
-        # 1. Generate TSX with Groq
-        tsx_code = write_circuit_tsx(prompt.strip())
-        circuit_test = simulate_connectivity(tsx_code)
+        # 1. Generate and validate TSX with Groq. Retry so a malformed model
+        # response is corrected before the PCB builder is invoked.
+        circuit_test = None
+        tsx_code = None
+        for attempt in range(3):
+            tsx_code = write_circuit_tsx(
+                prompt.strip(),
+                circuit_test["errors"] if circuit_test else None,
+            )
+            circuit_test = simulate_connectivity(tsx_code)
+            if circuit_test["status"] == "PASS":
+                break
         if circuit_test["status"] == "FAIL":
             return jsonify({"error": "Circuit connectivity test failed.", "circuit_test": circuit_test}), 422
 
@@ -103,8 +122,10 @@ def generate():
             sch = base64.b64encode(f.read()).decode()
         with open(os.path.join(PROJECT_DIR, "dist", "index", "pcb.png"), "rb") as f:
             pcb = base64.b64encode(f.read()).decode()
-    except Exception:
+    except Exception as error:
         app.logger.exception("PCB generation failed")
+        if error.__class__.__name__ in {"BadRequestError", "AuthenticationError", "APIError"}:
+            return jsonify({"error": f"AI generation failed: {error}"}), 502
         return jsonify({"error": "PCB generation failed. Check the server logs for details."}), 500
 
     # 4. Dummy BOM for now

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, redirect, send_from_directory
 import os, json, subprocess, base64
 import re
 from openai import OpenAI
@@ -92,7 +92,11 @@ def home(): return send_from_directory('.', 'index.html')
 
 @app.route('/generate', methods=['GET'])
 def generate_method_error():
-    return jsonify({"error": "Use POST /generate with a JSON prompt."}), 405
+    return redirect('/')
+
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok", "provider": "nvidia"})
 
 @app.route('/generate', methods=['POST'])
 def generate():

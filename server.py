@@ -115,7 +115,20 @@ def generate():
 
         # 2. Build with tscircuit CLI
         cli_path = os.path.join(BASE_DIR, "node_modules", "tscircuit", "cli.mjs")
-        subprocess.run(["npx", "tsx", cli_path, "build", "--schematic-png", "--pcb-png"], cwd=PROJECT_DIR, check=True)
+        try:
+            build = subprocess.run(
+                ["npx", "tsx", cli_path, "build", "--schematic-png", "--pcb-png"],
+                cwd=PROJECT_DIR,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+        except FileNotFoundError as error:
+            raise RuntimeError("Node.js/npm is unavailable. Deploy this app with the Docker runtime.") from error
+        if build.returncode != 0:
+            details = (build.stderr or build.stdout or "tscircuit build failed").strip()
+            raise RuntimeError(f"tscircuit build failed: {details[-1200:]}")
 
         # 3. Read PNGs and return base64
         with open(os.path.join(PROJECT_DIR, "dist", "index", "schematic.png"), "rb") as f:
@@ -126,7 +139,7 @@ def generate():
         app.logger.exception("PCB generation failed")
         if error.__class__.__name__ in {"BadRequestError", "AuthenticationError", "APIError"}:
             return jsonify({"error": f"AI generation failed: {error}"}), 502
-        return jsonify({"error": "PCB generation failed. Check the server logs for details."}), 500
+        return jsonify({"error": str(error)}), 503 if "Node.js/npm" in str(error) else 500
 
     # 4. Dummy BOM for now
     bom_csv = "Ref,Value\nU1,AMS1117-3.3\nC1,10uF"

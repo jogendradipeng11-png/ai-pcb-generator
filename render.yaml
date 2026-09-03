@@ -3,6 +3,17 @@ services:
     name: ai-pcb-generator
     runtime: docker
     plan: free
+    buildFilter:
+      paths:
+        - Dockerfile
+        - requirements.txt
+        - package.json
+        - package-lock.json
+        - server.py
+        - index.html
+        - cb/**
+        - static/**
+        - tests/**
     envVars:
       - key: NVIDIA_API_KEY
         sync: false

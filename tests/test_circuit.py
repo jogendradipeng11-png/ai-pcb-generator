@@ -1,9 +1,15 @@
 import unittest
 
-from server import simulate_connectivity
+from server import simulate_connectivity, write_circuit_tsx
 
 
 class CircuitConnectivityTest(unittest.TestCase):
+    def test_simple_led_request_generates_a_connected_circuit(self):
+        result = simulate_connectivity(write_circuit_tsx("simple 3.3V LED drive circuit"))
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["components"], 2)
+        self.assertEqual(result["traces"], 3)
+
     def test_placed_components_are_connected(self):
         tsx = """
         <board width="10mm" height="10mm">
